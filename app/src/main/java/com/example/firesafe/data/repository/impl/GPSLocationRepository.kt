@@ -1,11 +1,17 @@
 package com.example.firesafe.data.repository.impl
 
+import android.content.Context
 import com.example.firesafe.data.model.LocationData
 import com.example.firesafe.data.repository.LocationRepository
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
-class GPSLocationRepository(private val context: android.content.Context) : LocationRepository {
+class GPSLocationRepository(private val context: Context) : LocationRepository {
+    
+    private val sharedPreferences = context.getSharedPreferences("LocationPrefs", Context.MODE_PRIVATE)
+
     @android.annotation.SuppressLint("MissingPermission")
-    override suspend fun getCurrentLocation(): LocationData = kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+    override suspend fun getCurrentLocation(): LocationData = suspendCancellableCoroutine { continuation ->
         try {
             // Ensure runtime permission check
             if (androidx.core.content.ContextCompat.checkSelfPermission(
@@ -48,6 +54,29 @@ class GPSLocationRepository(private val context: android.content.Context) : Loca
             if (continuation.isActive) {
                 continuation.resumeWith(Result.failure(e))
             }
+        }
+    }
+
+    override suspend fun getInitialLocation(): LocationData? {
+        val lat = sharedPreferences.getFloat("init_lat", Float.NaN)
+        val lng = sharedPreferences.getFloat("init_lng", Float.NaN)
+        val address = sharedPreferences.getString("init_address", null)
+
+        return if (!lat.isNaN() && !lng.isNaN() && address != null) {
+            LocationData(lat.toDouble(), lng.toDouble(), address)
+        } else {
+            null
+        }
+    }
+
+    override suspend fun saveInitialLocation(location: LocationData) {
+        // Only save if it hasn't been set yet
+        if (!sharedPreferences.contains("init_lat")) {
+            sharedPreferences.edit()
+                .putFloat("init_lat", location.latitude.toFloat())
+                .putFloat("init_lng", location.longitude.toFloat())
+                .putString("init_address", location.address)
+                .apply()
         }
     }
 }

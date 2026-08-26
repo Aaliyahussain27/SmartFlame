@@ -19,7 +19,7 @@ fun MainNavigation() {
     // Scoped shared ViewModel across the entire navigation flow
     val viewModel: EmergencyViewModel = viewModel {
         EmergencyViewModel(
-            locationRepository = GPSLocationRepository(context),
+            locationRepository = GPSLocationRepository(context.applicationContext),
             otpRepository = Msg91OtpRepository()
         )
     }

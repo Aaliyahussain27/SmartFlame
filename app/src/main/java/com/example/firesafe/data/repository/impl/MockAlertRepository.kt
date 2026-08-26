@@ -14,8 +14,11 @@ class MockAlertRepository : AlertRepository {
         )
     }
 
-    override suspend fun cancelAlert(alertId: String): Boolean {
+    override suspend fun cancelAlert(alertId: String) {
         delay(1000)
-        return true
+    }
+
+    override suspend fun markOtpVerified(alertId: String, phoneNumber: String) {
+        delay(200)
     }
 }

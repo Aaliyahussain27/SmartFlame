@@ -1,5 +1,9 @@
 package com.example.firesafe
 
+import com.example.firesafe.data.repository.impl.MockAlertRepository
+import com.example.firesafe.data.repository.impl.MockFireStationRepository
+import com.example.firesafe.data.repository.impl.MockLocationRepository
+import com.example.firesafe.data.repository.impl.MockOtpRepository
 import com.example.firesafe.viewmodel.EmergencyFlowState
 import com.example.firesafe.viewmodel.EmergencyViewModel
 import kotlinx.coroutines.Dispatchers
@@ -15,6 +19,13 @@ class EmergencyViewModelTest {
 
     private val testDispatcher = UnconfinedTestDispatcher()
 
+    private fun createTestViewModel() = EmergencyViewModel(
+        locationRepository = MockLocationRepository(),
+        fireStationRepository = MockFireStationRepository(),
+        alertRepository = MockAlertRepository(),
+        otpRepository = MockOtpRepository()
+    )
+
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
@@ -27,20 +38,20 @@ class EmergencyViewModelTest {
 
     @Test
     fun testInitialStateIsIdle() {
-        val viewModel = EmergencyViewModel()
+        val viewModel = createTestViewModel()
         assertTrue(viewModel.uiState.value is EmergencyFlowState.Idle)
     }
 
     @Test
     fun testStartEmergencyTransitionsToDetectingLocation() {
-        val viewModel = EmergencyViewModel()
+        val viewModel = createTestViewModel()
         viewModel.startEmergency()
         assertTrue(viewModel.uiState.value is EmergencyFlowState.DetectingLocation)
     }
 
     @Test
     fun testResolveLocationAndDispatchTransitionsToAlertSent() = runTest {
-        val viewModel = EmergencyViewModel()
+        val viewModel = createTestViewModel()
         viewModel.startEmergency()
         
         viewModel.resolveLocationAndDispatch {}
@@ -56,7 +67,7 @@ class EmergencyViewModelTest {
 
     @Test
     fun testProceedToPhotoTransitionsToAwaitingPhoto() = runTest {
-        val viewModel = EmergencyViewModel()
+        val viewModel = createTestViewModel()
         viewModel.startEmergency()
         viewModel.resolveLocationAndDispatch {}
         testScheduler.advanceUntilIdle()
@@ -69,7 +80,7 @@ class EmergencyViewModelTest {
 
     @Test
     fun testSavePhotoAndProceedTransitionsToAwaitingOTP() = runTest {
-        val viewModel = EmergencyViewModel()
+        val viewModel = createTestViewModel()
         viewModel.startEmergency()
         viewModel.resolveLocationAndDispatch {}
         testScheduler.advanceUntilIdle()
@@ -86,7 +97,7 @@ class EmergencyViewModelTest {
 
     @Test
     fun testVerifyOtpTransitionsToConfirmed() = runTest {
-        val viewModel = EmergencyViewModel()
+        val viewModel = createTestViewModel()
         viewModel.startEmergency()
         viewModel.resolveLocationAndDispatch {}
         testScheduler.advanceUntilIdle()
@@ -105,7 +116,7 @@ class EmergencyViewModelTest {
 
     @Test
     fun testCancelAlertResetsToIdle() = runTest {
-        val viewModel = EmergencyViewModel()
+        val viewModel = createTestViewModel()
         viewModel.startEmergency()
         viewModel.resolveLocationAndDispatch {}
         testScheduler.advanceUntilIdle()

@@ -7,23 +7,41 @@ import com.example.firesafe.data.repository.impl.*
 import com.example.firesafe.data.model.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+sealed class EmergencyEvent {
+    data class ShowToast(val message: String) : EmergencyEvent()
+}
+
 class EmergencyViewModel(
     private val locationRepository: LocationRepository = MockLocationRepository(),
-    private val fireStationRepository: FireStationRepository = MockFireStationRepository(),
-    private val alertRepository: AlertRepository = MockAlertRepository(),
+    private val fireStationRepository: FireStationRepository = SupabaseFireStationRepository(),
+    private val alertRepository: AlertRepository = SupabaseAlertRepository(),
     private val otpRepository: OtpRepository = MockOtpRepository()
 ) : ViewModel() {
+
+    private companion object {
+        val DEFAULT_FALLBACK_LOCATION = LocationData(28.6139, 77.2090, "New Delhi, India")
+    }
 
     private val _uiState = MutableStateFlow<EmergencyFlowState>(EmergencyFlowState.Idle)
     val uiState: StateFlow<EmergencyFlowState> = _uiState.asStateFlow()
 
+    private val _events = Channel<EmergencyEvent>()
+    val events = _events.receiveAsFlow()
+
     private var otpTimerJob: Job? = null
+
+    override fun onCleared() {
+        super.onCleared()
+        otpTimerJob?.cancel()
+    }
 
     fun startEmergency() {
         _uiState.value = EmergencyFlowState.DetectingLocation
@@ -33,23 +51,25 @@ class EmergencyViewModel(
         viewModelScope.launch {
             try {
                 val location = locationRepository.getCurrentLocation()
+                locationRepository.saveInitialLocation(location) // Save initially detected location
+                
                 _uiState.value = EmergencyFlowState.LocationResolved(
                     location = location,
                     editedAddress = location.address,
                     permissionDenied = false
                 )
             } catch (e: SecurityException) {
-                // Fallback coordinates for New Delhi
+                val fallback = locationRepository.getInitialLocation() ?: DEFAULT_FALLBACK_LOCATION
                 _uiState.value = EmergencyFlowState.LocationResolved(
-                    location = LocationData(28.6139, 77.2090, ""),
-                    editedAddress = "",
+                    location = fallback,
+                    editedAddress = fallback.address,
                     permissionDenied = true
                 )
             } catch (e: Exception) {
-                // Other GPS failure fallback
+                val fallback = locationRepository.getInitialLocation() ?: DEFAULT_FALLBACK_LOCATION
                 _uiState.value = EmergencyFlowState.LocationResolved(
-                    location = LocationData(28.6139, 77.2090, ""),
-                    editedAddress = "",
+                    location = fallback,
+                    editedAddress = fallback.address,
                     permissionDenied = false
                 )
             }
@@ -58,7 +78,7 @@ class EmergencyViewModel(
 
     fun updateEditedAddress(newAddress: String) {
         _uiState.update { current ->
-            if (current is EmergencyFlowState.LocationResolved) {
+            if (current is EmergencyFlowState.LocationResolved && current.editedAddress != newAddress) {
                 current.copy(editedAddress = newAddress)
             } else {
                 current
@@ -74,9 +94,11 @@ class EmergencyViewModel(
                 else -> {
                     try {
                         val loc = locationRepository.getCurrentLocation()
+                        locationRepository.saveInitialLocation(loc)
                         Pair(loc, loc.address)
                     } catch (e: Exception) {
-                        Pair(LocationData(28.6139, 77.2090, "New Delhi, India"), "New Delhi, India")
+                        val fallback = locationRepository.getInitialLocation() ?: DEFAULT_FALLBACK_LOCATION
+                        Pair(fallback, fallback.address)
                     }
                 }
             }
@@ -106,6 +128,8 @@ class EmergencyViewModel(
                 )
                 onResolved()
             } catch (e: Exception) {
+                // Emit an error event or handle the failure safely
+                _events.send(EmergencyEvent.ShowToast("Failed to dispatch alert. Please check your connection and try again."))
                 _uiState.value = EmergencyFlowState.Idle
             }
         }
@@ -125,9 +149,13 @@ class EmergencyViewModel(
         val currentState = _uiState.value
         if (currentState is EmergencyFlowState.AlertSent) {
             viewModelScope.launch {
-                alertRepository.cancelAlert(currentState.alertConfirmation.alertId)
-                _uiState.value = EmergencyFlowState.Idle
-                onCancelled()
+                try {
+                    alertRepository.cancelAlert(currentState.alertConfirmation.alertId)
+                    _uiState.value = EmergencyFlowState.Idle
+                    onCancelled()
+                } catch (e: Exception) {
+                    _events.send(EmergencyEvent.ShowToast("Failed to cancel alert. Please try again."))
+                }
             }
         }
     }
@@ -161,7 +189,7 @@ class EmergencyViewModel(
             isSendingOtp = false,
             otpError = null,
             isVerifying = false,
-            countdownSeconds = 0 // Start at 0, require user to tap "Send OTP" if they want
+            countdownSeconds = 0
         )
     }
 
@@ -190,7 +218,7 @@ class EmergencyViewModel(
         }
     }
 
-    fun sendOtp(phoneNumber: String, context: android.content.Context) {
+    fun sendOtp(phoneNumber: String) {
         val trimmed = phoneNumber.trim()
         val digitsOnly = trimmed.removePrefix("+91").removePrefix("91").filter { it.isDigit() }
         
@@ -217,43 +245,49 @@ class EmergencyViewModel(
         }
 
         viewModelScope.launch {
-            val success = otpRepository.sendOtp(trimmed)
-            _uiState.update { current ->
-                if (current is EmergencyFlowState.AwaitingOTP) {
-                    current.copy(isSendingOtp = false)
-                } else {
-                    current
-                }
-            }
-            if (success) {
+            try {
+                val success = otpRepository.sendOtp(trimmed)
                 _uiState.update { current ->
                     if (current is EmergencyFlowState.AwaitingOTP) {
-                        current.copy(countdownSeconds = 30)
+                        current.copy(isSendingOtp = false)
                     } else {
                         current
                     }
                 }
-                startOtpCountdown()
-            } else {
-                android.widget.Toast.makeText(
-                    context,
-                    "Couldn't send OTP. Please check your number and try again.",
-                    android.widget.Toast.LENGTH_LONG
-                ).show()
+                
+                if (success) {
+                    _uiState.update { current ->
+                        if (current is EmergencyFlowState.AwaitingOTP) {
+                            current.copy(countdownSeconds = 30)
+                        } else {
+                            current
+                        }
+                    }
+                    startOtpCountdown()
+                } else {
+                    _events.send(EmergencyEvent.ShowToast("Couldn't send OTP. Please check your number and try again."))
+                }
+            } catch (e: Exception) {
+                _uiState.update { current ->
+                    if (current is EmergencyFlowState.AwaitingOTP) {
+                        current.copy(isSendingOtp = false)
+                    } else current
+                }
+                _events.send(EmergencyEvent.ShowToast("Network error while sending OTP."))
             }
         }
     }
 
-    fun resendOtp(context: android.content.Context) {
+    fun resendOtp() {
         val state = _uiState.value
         if (state is EmergencyFlowState.AwaitingOTP) {
-            sendOtp(state.phoneNumber, context)
+            sendOtp(state.phoneNumber)
         }
     }
 
     fun updatePhoneNumber(newNumber: String) {
         _uiState.update { current ->
-            if (current is EmergencyFlowState.AwaitingOTP) {
+            if (current is EmergencyFlowState.AwaitingOTP && current.phoneNumber != newNumber) {
                 current.copy(phoneNumber = newNumber, phoneError = null)
             } else {
                 current
@@ -272,21 +306,37 @@ class EmergencyViewModel(
                 }
             }
             viewModelScope.launch {
-                val success = otpRepository.verifyOtp(otpCode)
-                if (success) {
-                    otpTimerJob?.cancel()
-                    _uiState.value = EmergencyFlowState.Confirmed(
-                        location = state.location,
-                        alertConfirmation = state.alertConfirmation,
-                        fireStation = state.fireStation,
-                        photoPath = state.photoPath,
-                        verifiedPhoneNumber = state.phoneNumber
-                    )
-                    onVerified()
-                } else {
+                try {
+                    val success = otpRepository.verifyOtp(state.phoneNumber, otpCode)
+                    if (success) {
+                        otpTimerJob?.cancel()
+                        
+                        alertRepository.markOtpVerified(
+                            alertId = state.alertConfirmation.alertId,
+                            phoneNumber = state.phoneNumber
+                        )
+                        
+                        _uiState.value = EmergencyFlowState.Confirmed(
+                            location = state.location,
+                            alertConfirmation = state.alertConfirmation,
+                            fireStation = state.fireStation,
+                            photoPath = state.photoPath,
+                            verifiedPhoneNumber = state.phoneNumber
+                        )
+                        onVerified()
+                    } else {
+                        _uiState.update { current ->
+                            if (current is EmergencyFlowState.AwaitingOTP) {
+                                current.copy(isVerifying = false, otpError = "Incorrect verification code. Please try again.")
+                            } else {
+                                current
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
                     _uiState.update { current ->
                         if (current is EmergencyFlowState.AwaitingOTP) {
-                            current.copy(isVerifying = false, otpError = "Incorrect verification code. Please try again.")
+                            current.copy(isVerifying = false, otpError = "Network error verifying OTP. Please check connection.")
                         } else {
                             current
                         }

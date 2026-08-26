@@ -15,7 +15,6 @@ class Msg91OtpRepository(
 ) : OtpRepository {
 
     private val apiService: Msg91ApiService
-    private var lastPhoneNumber: String? = null
 
     init {
         val logging = HttpLoggingInterceptor().apply {
@@ -47,7 +46,6 @@ class Msg91OtpRepository(
             if (response.isSuccessful) {
                 val body = response.body()
                 if (body?.type == "success") {
-                    lastPhoneNumber = cleanNumber
                     return true
                 } else {
                     Log.e("Msg91OtpRepository", "Send OTP failed with MSG91 response: ${body?.message}")
@@ -57,21 +55,18 @@ class Msg91OtpRepository(
             }
         } catch (e: Exception) {
             Log.e("Msg91OtpRepository", "Network exception sending OTP", e)
+            throw e // Throw so ViewModel can handle network failure vs logic failure
         }
         return false
     }
 
-    override suspend fun verifyOtp(code: String): Boolean {
-        val phone = lastPhoneNumber
-        if (phone == null) {
-            Log.e("Msg91OtpRepository", "Verify OTP called but lastPhoneNumber is null")
-            return false
-        }
+    override suspend fun verifyOtp(phoneNumber: String, code: String): Boolean {
+        val cleanNumber = formatForMsg91(phoneNumber)
         
         try {
             val response = apiService.verifyOtp(
                 authKey = authKey,
-                mobile = phone,
+                mobile = cleanNumber,
                 otp = code
             )
             
@@ -87,6 +82,7 @@ class Msg91OtpRepository(
             }
         } catch (e: Exception) {
             Log.e("Msg91OtpRepository", "Network exception verifying OTP", e)
+            throw e
         }
         return false
     }

@@ -11,7 +11,7 @@ android {
     compileSdk = 36
     defaultConfig {
         applicationId = "com.example.firesafe"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
@@ -26,6 +26,17 @@ android {
 
         buildConfigField("String", "MSG91_AUTH_KEY", "\"$authKey\"")
         buildConfigField("String", "MSG91_TEMPLATE_ID", "\"$templateId\"")
+
+        val supabaseUrl = localProperties.getProperty("SUPABASE_URL") ?: ""
+        val supabasePublishableKey =
+            localProperties.getProperty("SUPABASE_PUBLISHABLE_KEY") ?: ""
+
+        buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
+        buildConfigField(
+            "String",
+            "SUPABASE_PUBLISHABLE_KEY",
+            "\"$supabasePublishableKey\""
+        )
     }
 
     buildTypes {
@@ -107,4 +118,16 @@ dependencies {
   implementation("com.squareup.retrofit2:retrofit:2.9.0")
   implementation("com.squareup.retrofit2:converter-gson:2.9.0")
   implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+
+    implementation(platform(libs.supabase.bom))
+  implementation(libs.supabase.postgrest)
+  implementation(libs.supabase.auth)
+  implementation(libs.ktor.client.okhttp)
+}
+
+configurations.all {
+    resolutionStrategy {
+        force("io.ktor:ktor-client-core:3.0.3")
+        force("io.ktor:ktor-client-core-jvm:3.0.3")
+    }
 }

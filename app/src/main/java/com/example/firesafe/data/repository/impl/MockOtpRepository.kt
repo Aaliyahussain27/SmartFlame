@@ -5,13 +5,12 @@ import kotlinx.coroutines.delay
 
 class MockOtpRepository : OtpRepository {
     override suspend fun sendOtp(phoneNumber: String): Boolean {
-        delay(1000)
+        delay(1500)
         return true
     }
 
-    override suspend fun verifyOtp(code: String): Boolean {
-        delay(1000)
-        // Accept "123456" as the successful OTP, or any code for testing
-        return code == "123456" || code == "111111"
+    override suspend fun verifyOtp(phoneNumber: String, code: String): Boolean {
+        delay(1500)
+        return code == "1234"
     }
 }
