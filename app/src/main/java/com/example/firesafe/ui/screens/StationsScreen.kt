@@ -10,26 +10,37 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.firesafe.data.model.FireStation
+import com.example.firesafe.data.repository.impl.GPSLocationRepository
+import com.example.firesafe.data.repository.impl.SupabaseFireStationRepository
+import com.example.firesafe.viewmodel.StationsUiState
+import com.example.firesafe.viewmodel.StationsViewModel
 import com.example.firesafe.theme.*
 
 @Composable
 fun StationsScreen(
     modifier: Modifier = Modifier
 ) {
-    val stations = listOf(
-        FireStation("Kalamboli Fire Station", 0.8, 3, "Duty Officer On Shift", "+912227420138"),
-        FireStation("Belapur Fire Station", 6.5, 14, "Duty Officer On Shift", "+912227572111"),
-        FireStation("New Panvel Fire Station", 4.2, 10, "Duty Officer On Shift", "+912227452337"),
-        FireStation("Vashi Fire Station", 9.8, 20, "Duty Officer On Shift", "+912227660101")
-    )
+    val context = LocalContext.current
+    val stationsViewModel: StationsViewModel = viewModel {
+        StationsViewModel(
+            stationRepository = SupabaseFireStationRepository(),
+            locationRepository = GPSLocationRepository(context.applicationContext)
+        )
+    }
+    val uiState by stationsViewModel.state.collectAsState()
+
+    LaunchedEffect(Unit) { stationsViewModel.load() }
 
     Column(
         modifier = modifier
@@ -48,12 +59,59 @@ fun StationsScreen(
             modifier = Modifier.padding(bottom = 20.dp)
         )
 
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            modifier = Modifier.weight(1f)
-        ) {
-            items(stations) { station ->
-                StationCard(station = station)
+        when (val state = uiState) {
+            is StationsUiState.Loading -> {
+                Box(
+                    modifier = Modifier.fillMaxSize().weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = InteractiveTeal)
+                }
+            }
+
+            is StationsUiState.Error -> {
+                Column(
+                    modifier = Modifier.fillMaxSize().weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = state.message,
+                        style = MaterialTheme.typography.bodyMedium.copy(color = EmergencyRed),
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = { stationsViewModel.load() },
+                        colors = ButtonDefaults.buttonColors(containerColor = InteractiveTeal)
+                    ) {
+                        Text("RETRY", fontWeight = FontWeight.Bold, color = DarkBackground)
+                    }
+                }
+            }
+
+            is StationsUiState.Loaded -> {
+                if (state.stations.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize().weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No fire stations found in the database yet.",
+                            style = MaterialTheme.typography.bodyMedium.copy(color = TextSecondary),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        items(state.stations) { station ->
+                            StationCard(station = station)
+                        }
+                    }
+                }
             }
         }
     }

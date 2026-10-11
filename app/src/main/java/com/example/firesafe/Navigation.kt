@@ -1,14 +1,19 @@
 package com.example.firesafe
 
+import android.widget.Toast
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.firesafe.data.repository.impl.GPSLocationRepository
+import com.example.firesafe.data.repository.impl.MockOtpRepository
 import com.example.firesafe.data.repository.impl.Msg91OtpRepository
+import com.example.firesafe.data.repository.impl.SupabaseAlertRepository
 import com.example.firesafe.ui.screens.*
+import com.example.firesafe.viewmodel.EmergencyEvent
 import com.example.firesafe.viewmodel.EmergencyViewModel
 
 @Composable
@@ -20,8 +25,18 @@ fun MainNavigation() {
     val viewModel: EmergencyViewModel = viewModel {
         EmergencyViewModel(
             locationRepository = GPSLocationRepository(context.applicationContext),
-            otpRepository = Msg91OtpRepository()
+            alertRepository = SupabaseAlertRepository(context.applicationContext),
+            otpRepository = if (BuildConfig.USE_MOCK_OTP) MockOtpRepository(context.applicationContext) else Msg91OtpRepository()
         )
+    }
+
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is EmergencyEvent.ShowToast ->
+                    Toast.makeText(context, event.message, Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     NavHost(

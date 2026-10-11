@@ -14,41 +14,42 @@ import kotlin.math.sqrt
 class SupabaseFireStationRepository : FireStationRepository {
 
     override suspend fun getNearestStation(latitude: Double, longitude: Double): FireStation {
-        val stations = supabase
+        val stations = getAllStations(latitude, longitude)
+
+        // Graceful fallback if the fire_stations table has no data yet
+        return stations.firstOrNull() ?: FireStation(
+            name = "Nearest Fire Station",
+            distanceKm = 0.0,
+            etaMinutes = 5,
+            responderName = "Duty Officer",
+            phoneNumber = "101"
+        )
+    }
+
+    override suspend fun getAllStations(latitude: Double, longitude: Double): List<FireStation> {
+        val rows = supabase
             .from("fire_stations")
             .select()
             .decodeList<SupabaseFireStationRow>()
 
-        if (stations.isEmpty()) {
-            // Graceful fallback if the fire_stations table has no data yet
-            return FireStation(
-                name = "Nearest Fire Station",
-                distanceKm = 0.0,
-                etaMinutes = 5,
-                responderName = "Duty Officer",
-                phoneNumber = "101"
-            )
-        }
-
-        // Pick closest station using Haversine formula
-        val nearest = stations.minByOrNull { haversineKm(latitude, longitude, it.lat, it.lng) }!!
-        val distanceKm = haversineKm(latitude, longitude, nearest.lat, nearest.lng)
-        // Rough ETA: assume 30 km/h average speed through city traffic
-        val etaMinutes = ((distanceKm / 30.0) * 60).toInt().coerceAtLeast(2)
-
-        val roundedDistance = kotlin.math.round(distanceKm * 10) / 10.0
-
-        return FireStation(
-            name = nearest.name,
-            distanceKm = roundedDistance,
-            etaMinutes = etaMinutes,
-            responderName = nearest.responderName ?: "Duty Officer",
-            phoneNumber = nearest.phoneNumber ?: "101"
-        )
+        return rows
+            .map { row ->
+                val distanceKm = haversineKm(latitude, longitude, row.lat, row.lng)
+                // Rough ETA: assume 30 km/h average speed through city traffic
+                val etaMinutes = ((distanceKm / 30.0) * 60).toInt().coerceAtLeast(2)
+                FireStation(
+                    name = row.name,
+                    distanceKm = kotlin.math.round(distanceKm * 10) / 10.0,
+                    etaMinutes = etaMinutes,
+                    responderName = row.responderName ?: "Duty Officer",
+                    phoneNumber = row.phoneNumber ?: "101"
+                )
+            }
+            .sortedBy { it.distanceKm }
     }
 
     /**
-     * Haversine formula — returns distance in kilometres between two lat/lng points.
+     * Haversine formula - returns distance in kilometres between two lat/lng points.
      */
     private fun haversineKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
         val earthRadiusKm = 6371.0

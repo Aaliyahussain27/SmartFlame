@@ -5,7 +5,11 @@ import androidx.lifecycle.viewModelScope
 import com.example.firesafe.data.repository.*
 import com.example.firesafe.data.repository.impl.*
 import com.example.firesafe.data.model.*
+import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,10 +24,10 @@ sealed class EmergencyEvent {
 }
 
 class EmergencyViewModel(
-    private val locationRepository: LocationRepository = MockLocationRepository(),
+    private val locationRepository: LocationRepository,
     private val fireStationRepository: FireStationRepository = SupabaseFireStationRepository(),
     private val alertRepository: AlertRepository = SupabaseAlertRepository(),
-    private val otpRepository: OtpRepository = MockOtpRepository()
+    private val otpRepository: OtpRepository
 ) : ViewModel() {
 
     private companion object {
@@ -33,7 +37,7 @@ class EmergencyViewModel(
     private val _uiState = MutableStateFlow<EmergencyFlowState>(EmergencyFlowState.Idle)
     val uiState: StateFlow<EmergencyFlowState> = _uiState.asStateFlow()
 
-    private val _events = Channel<EmergencyEvent>()
+    private val _events = Channel<EmergencyEvent>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
 
     private var otpTimerJob: Job? = null
@@ -103,34 +107,61 @@ class EmergencyViewModel(
                 }
             }
 
+            // Show the spinner and clear any older error
+            if (currentState is EmergencyFlowState.LocationResolved) {
+                _uiState.value = currentState.copy(isDispatching = true, errorMessage = null)
+            }
+
             try {
-                if (currentState is EmergencyFlowState.LocationResolved) {
-                    _uiState.value = currentState.copy(isDispatching = true)
+                // 2. Dispatch Alert to Central Hub (give up after 20s instead of loading forever)
+                val alertConfirm = withTimeout(20_000) {
+                    alertRepository.dispatchAlert(
+                        location.latitude,
+                        location.longitude,
+                        address
+                    )
                 }
 
-                // 2. Dispatch Alert to Central Hub
-                val alertConfirm = alertRepository.dispatchAlert(
-                    location.latitude,
-                    location.longitude,
-                    address
-                )
-                
-                // 3. Find Nearest Fire Station
-                val station = fireStationRepository.getNearestStation(
-                    location.latitude,
-                    location.longitude
-                )
-                
+                // 3. Find Nearest Fire Station. The alert is already saved at this point,
+                // so a failure here must NOT fail the whole dispatch (a retry would create a duplicate alert).
+                val station = try {
+                    withTimeout(10_000) {
+                        fireStationRepository.getNearestStation(location.latitude, location.longitude)
+                    }
+                } catch (e: Exception) {
+                    Log.e("EmergencyViewModel", "Nearest station lookup failed, using fallback", e)
+                    FireStation(
+                        name = "Nearest Fire Station",
+                        distanceKm = 0.0,
+                        etaMinutes = 5,
+                        responderName = "Duty Officer",
+                        phoneNumber = "101"
+                    )
+                }
+
                 _uiState.value = EmergencyFlowState.AlertSent(
                     location = location.copy(address = address),
                     alertConfirmation = alertConfirm,
                     fireStation = station
                 )
                 onResolved()
-            } catch (e: Exception) {
-                // Emit an error event or handle the failure safely
-                _events.send(EmergencyEvent.ShowToast("Failed to dispatch alert. Please check your connection and try again."))
-                _uiState.value = EmergencyFlowState.Idle
+            } catch (e: Throwable) {
+                if (e is CancellationException && e !is TimeoutCancellationException) throw e
+                Log.e("EmergencyViewModel", "Dispatch failed", e)
+                // Stay on the confirm screen, stop the spinner and show the real reason so the user can retry.
+                val reason = when (e) {
+                    is TimeoutCancellationException -> "the server took too long to respond. Check your internet."
+                    is ExceptionInInitializerError, is NoClassDefFoundError ->
+                        "Supabase is not set up. Add SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY to local.properties and rebuild."
+                    else -> e.message?.take(160) ?: e.javaClass.simpleName
+                }
+                _uiState.value = EmergencyFlowState.LocationResolved(
+                    location = location,
+                    editedAddress = address,
+                    permissionDenied = (currentState as? EmergencyFlowState.LocationResolved)?.permissionDenied ?: false,
+                    isDispatching = false,
+                    errorMessage = "Couldn't send the alert: $reason"
+                )
             }
         }
     }
@@ -218,7 +249,7 @@ class EmergencyViewModel(
         }
     }
 
-    fun sendOtp(phoneNumber: String) {
+    fun sendOtp(phoneNumber: String, @Suppress("UNUSED_PARAMETER") context: android.content.Context? = null) {
         val trimmed = phoneNumber.trim()
         val digitsOnly = trimmed.removePrefix("+91").removePrefix("91").filter { it.isDigit() }
         
@@ -273,12 +304,12 @@ class EmergencyViewModel(
                         current.copy(isSendingOtp = false)
                     } else current
                 }
-                _events.send(EmergencyEvent.ShowToast("Network error while sending OTP."))
+                _events.send(EmergencyEvent.ShowToast("Couldn't send OTP: ${e.message ?: "network error"}"))
             }
         }
     }
 
-    fun resendOtp() {
+    fun resendOtp(@Suppress("UNUSED_PARAMETER") context: android.content.Context? = null) {
         val state = _uiState.value
         if (state is EmergencyFlowState.AwaitingOTP) {
             sendOtp(state.phoneNumber)

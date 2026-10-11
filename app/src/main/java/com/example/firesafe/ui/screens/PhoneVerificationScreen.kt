@@ -152,7 +152,7 @@ fun PhoneVerificationScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Button(
-                        onClick = { viewModel.sendOtp(state.phoneNumber, context) },
+                        onClick = { viewModel.sendOtp(state.phoneNumber) },
                         enabled = !state.isSendingOtp && state.phoneNumber.isNotEmpty(),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = InteractiveTeal,
@@ -226,7 +226,7 @@ fun PhoneVerificationScreen(
                             fontWeight = FontWeight.Bold
                         ),
                         modifier = Modifier.clickable {
-                            viewModel.resendOtp(context)
+                            viewModel.resendOtp()
                         }
                     )
                 }

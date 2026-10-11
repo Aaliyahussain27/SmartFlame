@@ -1,5 +1,7 @@
 package com.example.firesafe.data.repository.impl
 
+import android.content.Context
+import com.example.firesafe.data.local.AlertHistoryStore
 import com.example.firesafe.data.supabase
 import com.example.firesafe.data.model.AlertConfirmation
 import com.example.firesafe.data.model.SupabaseIncidentRow
@@ -10,7 +12,11 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-class SupabaseAlertRepository : AlertRepository {
+class SupabaseAlertRepository(context: Context? = null) : AlertRepository {
+
+    // Remembers which alerts were sent from this phone (used by the History tab)
+    private val historyStore = context?.let { AlertHistoryStore(it) }
+
 
     override suspend fun dispatchAlert(
         latitude: Double,
@@ -39,6 +45,7 @@ class SupabaseAlertRepository : AlertRepository {
             .decodeSingle<SupabaseIncidentRow>()
 
         val id = inserted.id ?: throw IllegalStateException("Database failed to return a valid incident ID")
+        historyStore?.add(id)
 
         return AlertConfirmation(
             alertId = id,

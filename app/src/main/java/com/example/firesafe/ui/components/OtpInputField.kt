@@ -60,7 +60,7 @@ fun OtpInputField(
 
         // Visual Row of boxes
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
@@ -68,16 +68,18 @@ fun OtpInputField(
         ) {
             for (i in 0 until otpLength) {
                 val char = if (i < otpValue.length) otpValue[i].toString() else ""
-                
+
                 // Highlight only the currently active slot when focused
                 // The active slot is the first empty box, or the last box if filled
                 val isBoxFocused = isFocused && (
-                    (i == otpValue.length) || (i == otpLength - 1 && otpValue.length == otpLength)
-                )
+                        (i == otpValue.length) || (i == otpLength - 1 && otpValue.length == otpLength)
+                        )
 
                 Box(
                     modifier = Modifier
-                        .size(width = 44.dp, height = 56.dp)
+                        // Every box takes an equal share of the row, so all 6 are the same size on any screen
+                        .weight(1f)
+                        .height(56.dp)
                         .background(ElevatedCardBackground, RoundedCornerShape(8.dp))
                         .border(
                             width = if (isBoxFocused) 2.dp else 1.dp,

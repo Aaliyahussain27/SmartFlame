@@ -10,7 +10,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -19,17 +21,23 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.firesafe.data.model.HistoryItem
+import com.example.firesafe.data.repository.impl.SupabaseHistoryRepository
+import com.example.firesafe.viewmodel.HistoryUiState
+import com.example.firesafe.viewmodel.HistoryViewModel
 import com.example.firesafe.theme.*
 
 @Composable
 fun HistoryScreen(
     modifier: Modifier = Modifier
 ) {
-    val historyItems = listOf(
-        HistoryItem("AL-8893-X", "July 15, 2026", "01:00 AM", "Connaught Place, New Delhi, Delhi 110001", "Resolved & Handled", true),
-        HistoryItem("AL-4412-B", "May 22, 2026", "11:15 PM", "Bandra West, Mumbai, Maharashtra 400050", "Cancelled by User", false),
-        HistoryItem("AL-3310-M", "April 18, 2026", "09:40 AM", "MG Road, Bengaluru, Karnataka 560001", "Resolved & Handled", true)
-    )
+    val context = LocalContext.current
+    val historyViewModel: HistoryViewModel = viewModel {
+        HistoryViewModel(SupabaseHistoryRepository(context.applicationContext))
+    }
+    val uiState by historyViewModel.state.collectAsState()
+
+    // Reload from the database every time this tab is opened
+    LaunchedEffect(Unit) { historyViewModel.load() }
 
     Column(
         modifier = modifier
@@ -48,26 +56,58 @@ fun HistoryScreen(
             modifier = Modifier.padding(bottom = 20.dp)
         )
 
-        if (historyItems.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "No history available",
-                    style = MaterialTheme.typography.bodyMedium.copy(color = TextSecondary),
-                    textAlign = TextAlign.Center
-                )
+        when (val state = uiState) {
+            is HistoryUiState.Loading -> {
+                Box(
+                    modifier = Modifier.fillMaxSize().weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = InteractiveTeal)
+                }
             }
-        } else {
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.weight(1f)
-            ) {
-                items(historyItems) { item ->
-                    HistoryItemCard(item = item)
+
+            is HistoryUiState.Error -> {
+                Column(
+                    modifier = Modifier.fillMaxSize().weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = state.message,
+                        style = MaterialTheme.typography.bodyMedium.copy(color = EmergencyRed),
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = { historyViewModel.load() },
+                        colors = ButtonDefaults.buttonColors(containerColor = InteractiveTeal)
+                    ) {
+                        Text("RETRY", fontWeight = FontWeight.Bold, color = DarkBackground)
+                    }
+                }
+            }
+
+            is HistoryUiState.Loaded -> {
+                if (state.items.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize().weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No alerts yet.\nReports you send from this phone will show up here.",
+                            style = MaterialTheme.typography.bodyMedium.copy(color = TextSecondary),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        items(state.items) { item ->
+                            HistoryItemCard(item = item)
+                        }
+                    }
                 }
             }
         }

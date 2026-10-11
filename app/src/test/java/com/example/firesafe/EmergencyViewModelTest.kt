@@ -1,8 +1,5 @@
 package com.example.firesafe
 
-import com.example.firesafe.data.repository.impl.MockAlertRepository
-import com.example.firesafe.data.repository.impl.MockFireStationRepository
-import com.example.firesafe.data.repository.impl.MockLocationRepository
 import com.example.firesafe.data.repository.impl.MockOtpRepository
 import com.example.firesafe.viewmodel.EmergencyFlowState
 import com.example.firesafe.viewmodel.EmergencyViewModel

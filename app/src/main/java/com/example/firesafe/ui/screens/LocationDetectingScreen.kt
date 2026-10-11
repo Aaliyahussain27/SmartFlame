@@ -209,6 +209,15 @@ fun LocationDetectingScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
+                    if (state.errorMessage != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = state.errorMessage,
+                            style = MaterialTheme.typography.bodySmall.copy(color = EmergencyRed),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(24.dp))
 
                     Button(
