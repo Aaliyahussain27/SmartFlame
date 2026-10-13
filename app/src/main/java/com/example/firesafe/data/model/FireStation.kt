@@ -5,5 +5,8 @@ data class FireStation(
     val distanceKm: Double,
     val etaMinutes: Int,
     val responderName: String,
-    val phoneNumber: String
+    val phoneNumber: String,
+    val latitude: Double = 0.0,
+    val longitude: Double = 0.0,
+    val address: String? = null
 )

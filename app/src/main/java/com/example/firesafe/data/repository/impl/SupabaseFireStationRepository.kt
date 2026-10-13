@@ -22,7 +22,9 @@ class SupabaseFireStationRepository : FireStationRepository {
             distanceKm = 0.0,
             etaMinutes = 5,
             responderName = "Duty Officer",
-            phoneNumber = "101"
+            phoneNumber = "101",
+            latitude = latitude,
+            longitude = longitude
         )
     }
 
@@ -42,7 +44,10 @@ class SupabaseFireStationRepository : FireStationRepository {
                     distanceKm = kotlin.math.round(distanceKm * 10) / 10.0,
                     etaMinutes = etaMinutes,
                     responderName = row.responderName ?: "Duty Officer",
-                    phoneNumber = row.phoneNumber ?: "101"
+                    phoneNumber = row.phoneNumber ?: "101",
+                    latitude = row.lat,
+                    longitude = row.lng,
+                    address = row.address
                 )
             }
             .sortedBy { it.distanceKm }

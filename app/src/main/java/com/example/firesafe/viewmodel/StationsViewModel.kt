@@ -3,6 +3,7 @@ package com.example.firesafe.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.firesafe.data.model.FireStation
+import com.example.firesafe.data.model.LocationData
 import com.example.firesafe.data.repository.FireStationRepository
 import com.example.firesafe.data.repository.LocationRepository
 import kotlinx.coroutines.CancellationException
@@ -13,7 +14,10 @@ import kotlinx.coroutines.launch
 
 sealed class StationsUiState {
     object Loading : StationsUiState()
-    data class Loaded(val stations: List<FireStation>) : StationsUiState()
+    data class Loaded(
+        val stations: List<FireStation>,
+        val userLocation: LocationData? = null
+    ) : StationsUiState()
     data class Error(val message: String) : StationsUiState()
 }
 
@@ -24,6 +28,9 @@ class StationsViewModel(
 
     private val _state = MutableStateFlow<StationsUiState>(StationsUiState.Loading)
     val state: StateFlow<StationsUiState> = _state.asStateFlow()
+
+    private val _currentLocation = MutableStateFlow<LocationData?>(null)
+    val currentLocation: StateFlow<LocationData?> = _currentLocation.asStateFlow()
 
     fun load() {
         viewModelScope.launch {
@@ -36,6 +43,8 @@ class StationsViewModel(
                     locationRepository.getInitialLocation()
                 }
 
+                _currentLocation.value = location
+
                 if (location == null) {
                     _state.value = StationsUiState.Error(
                         "Location is needed to find the stations near you. Allow location access and try again."
@@ -43,8 +52,12 @@ class StationsViewModel(
                     return@launch
                 }
 
+                val stations = stationRepository.getAllStations(location.latitude, location.longitude)
+                    .sortedBy { it.distanceKm }
+
                 _state.value = StationsUiState.Loaded(
-                    stationRepository.getAllStations(location.latitude, location.longitude)
+                    stations = stations,
+                    userLocation = location
                 )
             } catch (e: Throwable) {
                 if (e is CancellationException) throw e

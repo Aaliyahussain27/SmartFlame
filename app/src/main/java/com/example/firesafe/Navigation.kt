@@ -9,6 +9,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.firesafe.data.repository.impl.GPSLocationRepository
+import com.example.firesafe.data.repository.impl.LiveLocationFireStationRepository
 import com.example.firesafe.data.repository.impl.MockOtpRepository
 import com.example.firesafe.data.repository.impl.Msg91OtpRepository
 import com.example.firesafe.data.repository.impl.SupabaseAlertRepository
@@ -25,6 +26,7 @@ fun MainNavigation() {
     val viewModel: EmergencyViewModel = viewModel {
         EmergencyViewModel(
             locationRepository = GPSLocationRepository(context.applicationContext),
+            fireStationRepository = LiveLocationFireStationRepository(context.applicationContext),
             alertRepository = SupabaseAlertRepository(context.applicationContext),
             otpRepository = if (BuildConfig.USE_MOCK_OTP) MockOtpRepository(context.applicationContext) else Msg91OtpRepository()
         )
